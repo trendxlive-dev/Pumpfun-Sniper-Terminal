@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Sniper Terminal"
+description = "A fast Solana token-launch monitoring terminal for pump.fun with paper trading by default, live-mode safeguards, configurable market-cap and social filters, execution-cost visibility, and real-time P&L tracking."
+version = "1.0.0"
+id = "artifacts/sniper-terminal"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21903
+
+[services.development]
+run = "pnpm --filter @workspace/sniper-terminal run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/sniper-terminal", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/sniper-terminal/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21903"
+BASE_PATH = "/"

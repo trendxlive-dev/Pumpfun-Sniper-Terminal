@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: sniper
+    description: Live Solana sniper terminal operations
 paths:
   /healthz:
     get:
@@ -24,7 +26,201 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /sniper/status:
+    get:
+      operationId: getSniperStatus
+      tags: [sniper]
+      summary: Get live engine status
+      responses:
+        "200":
+          description: Current engine and wallet status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SniperStatus"
+  /sniper/candidates:
+    get:
+      operationId: listTokenCandidates
+      tags: [sniper]
+      summary: List newly created token candidates
+      parameters:
+        - $ref: "#/components/parameters/MinMarketCap"
+        - $ref: "#/components/parameters/MaxMarketCap"
+        - $ref: "#/components/parameters/RequireSocials"
+        - $ref: "#/components/parameters/MinSocialScore"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Recent token candidates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TokenCandidate"
+  /sniper/activity:
+    get:
+      operationId: listSniperActivity
+      tags: [sniper]
+      summary: List live detection and execution activity
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Recent live activity
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SniperActivity"
+  /sniper/positions:
+    get:
+      operationId: listSniperPositions
+      tags: [sniper]
+      summary: List open and recently closed positions
+      responses:
+        "200":
+          description: Positions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SniperPosition"
+  /sniper/metrics:
+    get:
+      operationId: getSniperMetrics
+      tags: [sniper]
+      summary: Get live P&L and execution metrics
+      responses:
+        "200":
+          description: Trading metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SniperMetrics"
+  /sniper/config:
+    get:
+      operationId: getSniperConfig
+      tags: [sniper]
+      summary: Get live execution filters and risk limits
+      responses:
+        "200":
+          description: Current configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SniperConfig"
+    put:
+      operationId: updateSniperConfig
+      tags: [sniper]
+      summary: Update live execution filters and risk limits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SniperConfigInput"
+      responses:
+        "200":
+          description: Updated configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SniperConfig"
+  /sniper/engine/start:
+    post:
+      operationId: armSniperEngine
+      tags: [sniper]
+      summary: Arm the live sniper engine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EngineArmInput"
+      responses:
+        "200":
+          description: Engine armed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SniperStatus"
+  /sniper/engine/stop:
+    post:
+      operationId: stopSniperEngine
+      tags: [sniper]
+      summary: Stop the live sniper engine and cancel new entries
+      responses:
+        "200":
+          description: Engine stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SniperStatus"
+  /sniper/positions/{positionId}/sell:
+    post:
+      operationId: sellSniperPosition
+      tags: [sniper]
+      summary: Sell an open position immediately
+      parameters:
+        - name: positionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SellPositionInput"
+      responses:
+        "200":
+          description: Sell submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SniperActivity"
 components:
+  parameters:
+    MinMarketCap:
+      name: minMarketCap
+      in: query
+      schema:
+        type: number
+        minimum: 0
+        default: 0
+    MaxMarketCap:
+      name: maxMarketCap
+      in: query
+      schema:
+        type: number
+        minimum: 0
+        default: 100000
+    RequireSocials:
+      name: requireSocials
+      in: query
+      schema:
+        type: boolean
+        default: true
+    MinSocialScore:
+      name: minSocialScore
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 100
+        default: 40
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +229,156 @@ components:
           type: string
       required:
         - status
+    SniperStatus:
+      type: object
+      required: [mode, engine, rpc, wallet, lastBlock, latencyMs, message]
+      properties:
+        mode:
+          type: string
+          enum: [live]
+        engine:
+          type: string
+          enum: [armed, stopped, blocked]
+        rpc:
+          type: string
+          enum: [connected, disconnected]
+        wallet:
+          type: string
+          enum: [configured, missing, invalid]
+        walletAddress:
+          type: ["string", "null"]
+        lastBlock:
+          type: integer
+        latencyMs:
+          type: integer
+        message:
+          type: string
+    TokenCandidate:
+      type: object
+      required: [mint, name, symbol, createdAt, marketCap, liquidity, socialScore, socials, riskFlags, status]
+      properties:
+        mint: { type: string }
+        name: { type: string }
+        symbol: { type: string }
+        imageUrl: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        marketCap: { type: number }
+        liquidity: { type: number }
+        socialScore: { type: integer }
+        socials:
+          type: array
+          items: { type: string }
+        riskFlags:
+          type: array
+          items: { type: string }
+        status:
+          type: string
+          enum: [scanning, eligible, rejected, entered, exited]
+        firstBuyerAt:
+          type: ["string", "null"]
+        creator:
+          type: string
+    SniperActivity:
+      type: object
+      required: [id, timestamp, kind, message, status]
+      properties:
+        id: { type: string }
+        timestamp: { type: string, format: date-time }
+        kind:
+          type: string
+          enum: [detection, filter, buy, sell, stop, error]
+        message: { type: string }
+        mint: { type: ["string", "null"] }
+        signature: { type: ["string", "null"] }
+        status:
+          type: string
+          enum: [pending, confirmed, rejected, failed]
+        feeSol: { type: number }
+        tipSol: { type: number }
+    SniperPosition:
+      type: object
+      required: [id, mint, symbol, entryPrice, currentPrice, amountSol, pnlSol, pnlPercent, state]
+      properties:
+        id: { type: string }
+        mint: { type: string }
+        symbol: { type: string }
+        entryPrice: { type: number }
+        currentPrice: { type: number }
+        amountSol: { type: number }
+        tokenAmount: { type: number }
+        pnlSol: { type: number }
+        pnlPercent: { type: number }
+        feesSol: { type: number }
+        tipSol: { type: number }
+        openedAt: { type: string, format: date-time }
+        state:
+          type: string
+          enum: [open, selling, closed]
+    SniperMetrics:
+      type: object
+      required: [walletBalanceSol, realizedPnlSol, unrealizedPnlSol, totalFeesSol, totalTipsSol, winRate, trades, blocksToEntry]
+      properties:
+        walletBalanceSol: { type: number }
+        realizedPnlSol: { type: number }
+        unrealizedPnlSol: { type: number }
+        totalFeesSol: { type: number }
+        totalTipsSol: { type: number }
+        winRate: { type: number }
+        trades: { type: integer }
+        blocksToEntry: { type: number }
+        uptimeSeconds: { type: integer }
+    SniperConfig:
+      type: object
+      required: [minMarketCap, maxMarketCap, minLiquidity, requireSocials, minSocialScore, maxPositionSol, maxOpenPositions, takeProfitPercent, stopLossPercent, jitoTipSol, slippageBps, sellOnFirstBuyer]
+      properties:
+        minMarketCap: { type: number }
+        maxMarketCap: { type: number }
+        minLiquidity: { type: number }
+        requireSocials: { type: boolean }
+        minSocialScore: { type: integer }
+        maxPositionSol: { type: number }
+        maxOpenPositions: { type: integer }
+        takeProfitPercent: { type: number }
+        stopLossPercent: { type: number }
+        jitoTipSol: { type: number }
+        slippageBps: { type: integer }
+        sellOnFirstBuyer: { type: boolean }
+        maxDailyLossSol: { type: number }
+        blocklist:
+          type: array
+          items: { type: string }
+    SniperConfigInput:
+      type: object
+      required: [minMarketCap, maxMarketCap, minLiquidity, requireSocials, minSocialScore, maxPositionSol, maxOpenPositions, takeProfitPercent, stopLossPercent, jitoTipSol, slippageBps, sellOnFirstBuyer, maxDailyLossSol, blocklist]
+      properties:
+        minMarketCap: { type: number, minimum: 0 }
+        maxMarketCap: { type: number, minimum: 0 }
+        minLiquidity: { type: number, minimum: 0 }
+        requireSocials: { type: boolean }
+        minSocialScore: { type: integer, minimum: 0, maximum: 100 }
+        maxPositionSol: { type: number, minimum: 0 }
+        maxOpenPositions: { type: integer, minimum: 1, maximum: 20 }
+        takeProfitPercent: { type: number, minimum: 0 }
+        stopLossPercent: { type: number, minimum: 0 }
+        jitoTipSol: { type: number, minimum: 0 }
+        slippageBps: { type: integer, minimum: 1, maximum: 5000 }
+        sellOnFirstBuyer: { type: boolean }
+        maxDailyLossSol: { type: number, minimum: 0 }
+        blocklist:
+          type: array
+          items: { type: string }
+    EngineArmInput:
+      type: object
+      required: [acknowledgeLiveTrading, acknowledgeRisk]
+      properties:
+        acknowledgeLiveTrading: { type: boolean }
+        acknowledgeRisk: { type: boolean }
+    SellPositionInput:
+      type: object
+      required: [percentage]
+      properties:
+        percentage:
+          type: number
+          minimum: 1
+          maximum: 100
 
