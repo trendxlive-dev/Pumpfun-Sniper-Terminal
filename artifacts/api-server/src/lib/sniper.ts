@@ -32,6 +32,7 @@ export interface SniperConfig {
   maxOpenPositions: number;
   takeProfitPercent: number;
   stopLossPercent: number;
+  minimumHoldSeconds: number;
   jitoTipSol: number;
   slippageBps: number;
   sellOnFirstBuyer: boolean;
@@ -132,6 +133,7 @@ const DEFAULT_CONFIG: SniperConfig = {
   maxOpenPositions: 2,
   takeProfitPercent: 35,
   stopLossPercent: 18,
+  minimumHoldSeconds: 10,
   jitoTipSol: 0.0005,
   slippageBps: 1_000,
   sellOnFirstBuyer: true,
@@ -210,7 +212,11 @@ export class LiveSniper {
   private winningTrades = 0;
   private completedTrades = 0;
   private dailyLossSol = 0;
+  private blockedReason: string | null = null;
   private tokenSubscriptions = new Set<string>();
+  private automaticSellTimers = new Map<string, NodeJS.Timeout>();
+  private tipAccount: PublicKey | null = null;
+  private tipAccountPromise: Promise<PublicKey> | null = null;
   private rpcPoll: NodeJS.Timeout | null = null;
 
   constructor() {
@@ -247,7 +253,7 @@ export class LiveSniper {
         engine === "armed"
           ? "Live execution is armed. New eligible tokens may trigger real transactions."
           : engine === "blocked"
-            ? "Live execution is blocked until the RPC and wallet are valid."
+            ? this.blockedReason ?? "Live execution is blocked until the RPC and wallet are valid."
             : "Live execution is stopped. Arm it to submit real transactions.",
     };
   }
@@ -307,16 +313,22 @@ export class LiveSniper {
     }
     if (!this.keypair || !this.connection) {
       this.engine = "blocked";
+      this.blockedReason = "Live execution is blocked until the RPC and wallet are valid.";
       return this.getStatus();
     }
-    if (this.dailyLossSol >= this.config.maxDailyLossSol) {
+    if (this.config.maxDailyLossSol > 0 && this.dailyLossSol >= this.config.maxDailyLossSol) {
       this.engine = "blocked";
+      this.blockedReason = "Live execution is blocked because the daily loss limit has been reached.";
       throw new Error("Daily loss limit has already been reached");
     }
     this.engine = "armed";
+    this.blockedReason = null;
     this.startedAt ??= Date.now();
     this.connectStream();
     this.startRpcPoll();
+    void this.getTipAccount().catch((error) => {
+      logger.warn({ err: error }, "Unable to prefetch Jito tip account");
+    });
     this.pushActivity(activity("detection", "Live engine armed; scanning new pump.fun token creation events"));
     return this.getStatus();
   }
@@ -338,6 +350,11 @@ export class LiveSniper {
     }
     if (!this.keypair || !this.connection) {
       throw new Error("Live wallet or RPC is not configured");
+    }
+    const automaticSellTimer = this.automaticSellTimers.get(positionId);
+    if (automaticSellTimer) {
+      clearTimeout(automaticSellTimer);
+      this.automaticSellTimers.delete(positionId);
     }
     position.state = "selling";
     const result = await this.executeTrade("sell", position.mint, percentage >= 100 ? "100%" : `${percentage}%`, false);
@@ -402,7 +419,7 @@ export class LiveSniper {
       if (position && event.txType === "buy" && this.config.sellOnFirstBuyer) {
         position.currentPrice = Math.max(position.currentPrice, this.priceFromEvent(event));
         position.pnlSol = position.amountSol * ((position.currentPrice - position.entryPrice) / Math.max(position.entryPrice, 0.00000001));
-        await this.sellPosition(position.id, 100);
+        this.queueAutomaticSell(position, "first buyer detected");
       }
     }
   }
@@ -447,7 +464,7 @@ export class LiveSniper {
         `${candidate.name} ${candidate.symbol} ${candidate.mint}`.toLowerCase().includes(term.toLowerCase()),
       ) &&
       this.positions.filter((position) => position.state === "open").length < this.config.maxOpenPositions &&
-      this.dailyLossSol < this.config.maxDailyLossSol;
+       (this.config.maxDailyLossSol <= 0 || this.dailyLossSol < this.config.maxDailyLossSol);
     candidate.status = eligible ? "eligible" : "rejected";
     if (!eligible) {
       this.pushActivity(activity("filter", `Rejected ${candidate.symbol}: ${riskFlags[0] ?? "filter conditions not met"}`, { mint: candidate.mint, status: "rejected" }));
@@ -482,6 +499,42 @@ export class LiveSniper {
     if (this.tokenSubscriptions.has(mint) || !this.socket) return;
     this.tokenSubscriptions.add(mint);
     this.socket.send(JSON.stringify({ method: "subscribeTokenTrade", keys: [mint] }));
+  }
+
+  private queueAutomaticSell(position: SniperPosition, reason: string): void {
+    if (this.automaticSellTimers.has(position.id)) return;
+    const minimumHoldMs = Math.max(10, this.config.minimumHoldSeconds) * 1_000;
+    const openedAt = position.openedAt?.getTime() ?? Date.now();
+    const delayMs = Math.max(0, minimumHoldMs - (Date.now() - openedAt));
+    if (delayMs > 0) {
+      this.pushActivity(
+        activity("sell", `${reason}; 100% sell queued until the ${Math.ceil(minimumHoldMs / 1_000)}s minimum hold elapses`, {
+          mint: position.mint,
+          status: "pending",
+        }),
+      );
+    }
+    const timer = setTimeout(() => {
+      this.automaticSellTimers.delete(position.id);
+      const currentPosition = this.positions.find((item) => item.id === position.id);
+      if (!currentPosition || currentPosition.state !== "open") return;
+      this.pushActivity(
+        activity("sell", `Minimum hold elapsed; submitting 100% sell for ${currentPosition.symbol}`, {
+          mint: currentPosition.mint,
+          status: "pending",
+        }),
+      );
+      void this.sellPosition(currentPosition.id, 100).catch((error) => {
+        logger.warn({ err: error, mint: currentPosition.mint }, "Automatic sell failed");
+        this.pushActivity(
+          activity("error", "Automatic sell failed after the minimum hold", {
+            mint: currentPosition.mint,
+            status: "failed",
+          }),
+        );
+      });
+    }, delayMs);
+    this.automaticSellTimers.set(position.id, timer);
   }
 
   private async executeTrade(
@@ -521,16 +574,13 @@ export class LiveSniper {
     const tradeSignature = tradeTx.signatures[0]
       ? bs58.encode(tradeTx.signatures[0])
       : bundleId;
-    let confirmed = false;
-    try {
-      await Promise.race([
-        this.connection.confirmTransaction(tradeSignature, "confirmed"),
-        new Promise((resolve) => setTimeout(resolve, 4_000)),
-      ]);
-      confirmed = true;
-    } catch (error) {
-      logger.warn({ err: error, tradeSignature }, "Trade bundle confirmation failed");
-    }
+    const confirmed = await Promise.race([
+      this.connection.confirmTransaction(tradeSignature, "confirmed").then(() => true).catch((error) => {
+        logger.warn({ err: error, tradeSignature }, "Trade bundle confirmation failed");
+        return false;
+      }),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 4_000)),
+    ]);
     const feeSol = 0.000005;
     this.totalFeesSol += feeSol;
     this.totalTipsSol += this.config.jitoTipSol;
@@ -591,16 +641,26 @@ export class LiveSniper {
   }
 
   private async getTipAccount(): Promise<PublicKey> {
-    const response = await fetch(JITO_BUNDLE_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTipAccounts", params: [] }),
-    });
-    if (!response.ok) throw new Error(`Jito tip account request failed: ${response.status}`);
-    const payload = (await response.json()) as { result?: string[] };
-    const account = payload.result?.[Math.floor(Math.random() * (payload.result?.length ?? 1))];
-    if (!account) throw new Error("Jito returned no tip accounts");
-    return new PublicKey(account);
+    if (this.tipAccount) return this.tipAccount;
+    if (this.tipAccountPromise) return this.tipAccountPromise;
+    this.tipAccountPromise = (async () => {
+      const response = await fetch(JITO_BUNDLE_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getTipAccounts", params: [] }),
+      });
+      if (!response.ok) throw new Error(`Jito tip account request failed: ${response.status}`);
+      const payload = (await response.json()) as { result?: string[] };
+      const account = payload.result?.[Math.floor(Math.random() * (payload.result?.length ?? 1))];
+      if (!account) throw new Error("Jito returned no tip accounts");
+      this.tipAccount = new PublicKey(account);
+      return this.tipAccount;
+    })();
+    try {
+      return await this.tipAccountPromise;
+    } finally {
+      this.tipAccountPromise = null;
+    }
   }
 
   private async closeAtaIfEmpty(mint: string): Promise<void> {

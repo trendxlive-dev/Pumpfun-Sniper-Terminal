@@ -166,6 +166,11 @@ export interface SniperConfig {
   maxOpenPositions: number;
   takeProfitPercent: number;
   stopLossPercent: number;
+  /**
+     * @minimum 10
+     * @maximum 3600
+     */
+  minimumHoldSeconds: number;
   jitoTipSol: number;
   slippageBps: number;
   sellOnFirstBuyer: boolean;
@@ -197,6 +202,11 @@ export interface SniperConfigInput {
   takeProfitPercent: number;
   /** @minimum 0 */
   stopLossPercent: number;
+  /**
+     * @minimum 10
+     * @maximum 3600
+     */
+  minimumHoldSeconds: number;
   /** @minimum 0 */
   jitoTipSol: number;
   /**

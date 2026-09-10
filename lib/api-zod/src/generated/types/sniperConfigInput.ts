@@ -30,6 +30,11 @@ export interface SniperConfigInput {
   takeProfitPercent: number;
   /** @minimum 0 */
   stopLossPercent: number;
+  /**
+     * @minimum 10
+     * @maximum 3600
+     */
+  minimumHoldSeconds: number;
   /** @minimum 0 */
   jitoTipSol: number;
   /**

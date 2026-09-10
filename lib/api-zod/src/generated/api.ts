@@ -143,6 +143,11 @@ export const GetSniperMetricsResponse = zod.object({
 /**
  * @summary Get live execution filters and risk limits
  */
+export const getSniperConfigResponseMinimumHoldSecondsMin = 10;
+export const getSniperConfigResponseMinimumHoldSecondsMax = 3600;
+
+
+
 export const GetSniperConfigResponse = zod.object({
   "minMarketCap": zod.number(),
   "maxMarketCap": zod.number(),
@@ -153,6 +158,7 @@ export const GetSniperConfigResponse = zod.object({
   "maxOpenPositions": zod.number().int(),
   "takeProfitPercent": zod.number(),
   "stopLossPercent": zod.number(),
+  "minimumHoldSeconds": zod.number().int().min(getSniperConfigResponseMinimumHoldSecondsMin).max(getSniperConfigResponseMinimumHoldSecondsMax),
   "jitoTipSol": zod.number(),
   "slippageBps": zod.number().int(),
   "sellOnFirstBuyer": zod.boolean(),
@@ -181,6 +187,9 @@ export const updateSniperConfigBodyTakeProfitPercentMin = 0;
 
 export const updateSniperConfigBodyStopLossPercentMin = 0;
 
+export const updateSniperConfigBodyMinimumHoldSecondsMin = 10;
+export const updateSniperConfigBodyMinimumHoldSecondsMax = 3600;
+
 export const updateSniperConfigBodyJitoTipSolMin = 0;
 
 export const updateSniperConfigBodySlippageBpsMax = 5000;
@@ -199,12 +208,18 @@ export const UpdateSniperConfigBody = zod.object({
   "maxOpenPositions": zod.number().int().min(1).max(updateSniperConfigBodyMaxOpenPositionsMax),
   "takeProfitPercent": zod.number().min(updateSniperConfigBodyTakeProfitPercentMin),
   "stopLossPercent": zod.number().min(updateSniperConfigBodyStopLossPercentMin),
+  "minimumHoldSeconds": zod.number().int().min(updateSniperConfigBodyMinimumHoldSecondsMin).max(updateSniperConfigBodyMinimumHoldSecondsMax),
   "jitoTipSol": zod.number().min(updateSniperConfigBodyJitoTipSolMin),
   "slippageBps": zod.number().int().min(1).max(updateSniperConfigBodySlippageBpsMax),
   "sellOnFirstBuyer": zod.boolean(),
   "maxDailyLossSol": zod.number().min(updateSniperConfigBodyMaxDailyLossSolMin),
   "blocklist": zod.array(zod.string())
 })
+
+export const updateSniperConfigResponseMinimumHoldSecondsMin = 10;
+export const updateSniperConfigResponseMinimumHoldSecondsMax = 3600;
+
+
 
 export const UpdateSniperConfigResponse = zod.object({
   "minMarketCap": zod.number(),
@@ -216,6 +231,7 @@ export const UpdateSniperConfigResponse = zod.object({
   "maxOpenPositions": zod.number().int(),
   "takeProfitPercent": zod.number(),
   "stopLossPercent": zod.number(),
+  "minimumHoldSeconds": zod.number().int().min(updateSniperConfigResponseMinimumHoldSecondsMin).max(updateSniperConfigResponseMinimumHoldSecondsMax),
   "jitoTipSol": zod.number(),
   "slippageBps": zod.number().int(),
   "sellOnFirstBuyer": zod.boolean(),

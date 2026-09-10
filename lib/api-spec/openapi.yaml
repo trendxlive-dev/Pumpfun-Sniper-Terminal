@@ -329,7 +329,7 @@ components:
         uptimeSeconds: { type: integer }
     SniperConfig:
       type: object
-      required: [minMarketCap, maxMarketCap, minLiquidity, requireSocials, minSocialScore, maxPositionSol, maxOpenPositions, takeProfitPercent, stopLossPercent, jitoTipSol, slippageBps, sellOnFirstBuyer]
+      required: [minMarketCap, maxMarketCap, minLiquidity, requireSocials, minSocialScore, maxPositionSol, maxOpenPositions, takeProfitPercent, stopLossPercent, minimumHoldSeconds, jitoTipSol, slippageBps, sellOnFirstBuyer]
       properties:
         minMarketCap: { type: number }
         maxMarketCap: { type: number }
@@ -340,6 +340,7 @@ components:
         maxOpenPositions: { type: integer }
         takeProfitPercent: { type: number }
         stopLossPercent: { type: number }
+        minimumHoldSeconds: { type: integer, minimum: 10, maximum: 3600 }
         jitoTipSol: { type: number }
         slippageBps: { type: integer }
         sellOnFirstBuyer: { type: boolean }
@@ -349,7 +350,7 @@ components:
           items: { type: string }
     SniperConfigInput:
       type: object
-      required: [minMarketCap, maxMarketCap, minLiquidity, requireSocials, minSocialScore, maxPositionSol, maxOpenPositions, takeProfitPercent, stopLossPercent, jitoTipSol, slippageBps, sellOnFirstBuyer, maxDailyLossSol, blocklist]
+      required: [minMarketCap, maxMarketCap, minLiquidity, requireSocials, minSocialScore, maxPositionSol, maxOpenPositions, takeProfitPercent, stopLossPercent, minimumHoldSeconds, jitoTipSol, slippageBps, sellOnFirstBuyer, maxDailyLossSol, blocklist]
       properties:
         minMarketCap: { type: number, minimum: 0 }
         maxMarketCap: { type: number, minimum: 0 }
@@ -360,6 +361,7 @@ components:
         maxOpenPositions: { type: integer, minimum: 1, maximum: 20 }
         takeProfitPercent: { type: number, minimum: 0 }
         stopLossPercent: { type: number, minimum: 0 }
+        minimumHoldSeconds: { type: integer, minimum: 10, maximum: 3600 }
         jitoTipSol: { type: number, minimum: 0 }
         slippageBps: { type: integer, minimum: 1, maximum: 5000 }
         sellOnFirstBuyer: { type: boolean }
